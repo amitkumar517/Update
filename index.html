@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Professional UK Audio Transcriber</title>
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --success: #10b981;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #0f172a;
+            --border: #e2e8f0;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .container { background-color: var(--card); padding: 40px; border-radius: 16px; box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1); max-width: 600px; width: 100%; box-sizing: border-box; }
+        h2 { margin-top: 0; color: #1e293b; font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+        p { color: #64748b; font-size: 14px; margin-bottom: 24px; }
+        
+        /* Modern Drag & Drop Upload Zone */
+        .upload-zone { border: 2px dashed #cbd5e1; padding: 32px 20px; border-radius: 12px; cursor: pointer; background: #fdfdfd; transition: all 0.2s ease; display: flex; flex-direction: column; align-items: center; margin-bottom: 20px; }
+        .upload-zone:hover, .upload-zone.dragover { border-color: var(--primary); background: #f5f3ff; }
+        .upload-icon { font-size: 40px; margin-bottom: 12px; }
+        .upload-text { font-size: 14px; font-weight: 600; color: #475569; }
+        .upload-hint { font-size: 12px; color: #94a3b8; margin-top: 4px; }
+        
+        input[type="file"] { display: none; }
+        
+        button { background-color: var(--primary); color: white; border: none; padding: 14px 28px; font-size: 16px; border-radius: 8px; cursor: pointer; width: 100%; transition: background 0.2s; font-weight: 600; box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2); }
+        button:hover { background-color: var(--primary-hover); }
+        button:disabled { background-color: #cbd5e1; color: #94a3b8; cursor: not-allowed; box-shadow: none; }
+        
+        /* Status Feedback */
+        #status { margin-top: 20px; font-size: 14px; font-weight: 600; color: #64748b; text-align: left; display: flex; align-items: center; gap: 8px; }
+        
+        /* Progress System */
+        .progress-wrapper { width: 100%; background: #e2e8f0; height: 8px; border-radius: 9999px; margin-top: 12px; display: none; overflow: hidden; }
+        .progress-bar { height: 100%; width: 0%; background: var(--success); transition: width 0.3s ease; }
+        
+        /* Native-feeling Output Area */
+        .output-header { display: flex; justify-content: space-between; align-items: center; margin-top: 28px; margin-bottom: 8px; }
+        .output-label { font-size: 14px; font-weight: 600; color: #475569; }
+        #result { width: 100%; height: 220px; padding: 14px; border: 1px solid var(--border); border-radius: 8px; resize: none; background-color: #f8fafc; font-size: 15px; line-height: 1.6; color: #334155; box-sizing: border-box; outline: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>🇬🇧 UK Audio to Text AI Pro</h2>
+    <p>Convert long UK accent voice files (up to 20 mins) with automated background chunking.</p>
+    
+    <!-- Real Actionable Upload Container -->
+    <div class="upload-zone" id="dropZone" onclick="document.getElementById('audioFile').click()">
+        <div class="upload-icon">🎵</div>
+        <div class="upload-text" id="uploadStatusText">Click or Drag & Drop Audio File</div>
+        <div class="upload-hint">Supports MP3, WAV, M4A, OGG</div>
+    </div>
+    <input type="file" id="audioFile" accept="audio/*">
+
+    <button id="convertBtn" onclick="processAndConvert()" disabled>Start Secure Transcription</button>
+    
+    <div class="progress-wrapper" id="progressWrapper">
+        <div class="progress-bar" id="progressBar"></div>
+    </div>
+    <div id="status"></div>
+    
+    <div class="output-header">
+        <span class="output-label">Transcribed Text</span>
+    </div>
+    <textarea id="result" placeholder="Your live text will generate here chunk by chunk..." readonly></textarea>
+</div>
+
+<script>
+    // ⚠️ PASTE YOUR HUGGING FACE ACCESS TOKEN HERE
+    const HF_TOKEN = "YOUR_HUGGINGFACE_API_KEY_HERE"; 
+
+    const fileInput = document.getElementById('audioFile');
+    const dropZone = document.getElementById('dropZone');
+    const uploadStatusText = document.getElementById('uploadStatusText');
+    const statusDiv = document.getElementById('status');
+    const resultText = document.getElementById('result');
+    const convertBtn = document.getElementById('convertBtn');
+    const progressWrapper = document.getElementById('progressWrapper');
+    const progressBar = document.getElementById('progressBar');
+
+    let selectedFile = null;
+
+    // Drag and Drop Visual States
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => { e.preventDefault(); dropZone.classList.add('dragover'); }, false);
+    });
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => { e.preventDefault(); dropZone.classList.remove('dragover'); }, false);
+    });
+    dropZone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if(files.length) handleFileSelection(files[0]);
+    });
+
+    fileInput.addEventListener('change', function() {
+        if(this.files.length) handleFileSelection(this.files[0]);
+    });
+
+    function handleFileSelection(file) {
+        if (!file.type.startsWith('audio/')) {
+            alert('Please select a valid audio file format.');
+            return;
+        }
+        selectedFile = file;
+        uploadStatusText.innerHTML = `Selected: <strong>${file.name}</strong>`;
+        convertBtn.disabled = false;
+        statusDiv.innerText = "👍 Audio loaded successfully. Ready to convert.";
+    }
+
+    async function processAndConvert() {
+        if (!selectedFile) return;
+
+        if (HF_TOKEN === "YOUR_HUGGINGFACE_API_KEY_HERE" || !HF_TOKEN.startsWith("hf_")) {
+            alert("Error: You must add a valid Hugging Face API key (starts with 'hf_') inside the index.html code.");
+            return;
+        }
+
+        statusDiv.innerText = "⏳ Reading and decoding local audio binary...";
+        convertBtn.disabled = true;
+        resultText.value = "";
+        progressWrapper.style.display = "block";
+        progressBar.style.width = "0%";
+
+        try {
+            const AudioContext = window.AudioContext || window.webkitAudioContext;
+            const audioCtx = new AudioContext();
+            const arrayBuffer = await selectedFile.arrayBuffer();
+            const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+            
+            const duration = audioBuffer.duration;
+            const chunkSize = 30; // 30-second structural increments
+            const totalChunks = Math.ceil(duration / chunkSize);
+            
+            let finalTranscript = "";
+
+            for (let i = 0; i < totalChunks; i++) {
+                const start = i * chunkSize;
+                const end = Math.min(start + chunkSize, duration);
+                
+                statusDiv.innerText = `⚙️ Processing chunk ${i + 1}/${totalChunks} (${Math.round(start)}s - ${Math.round(end)}s)...`;
+                
+                const chunkBuffer = extractAudioChunk(audioCtx, audioBuffer, start, end);
+                const wavBlob = await bufferToWavBlob(chunkBuffer);
+                const transcriptChunk = await queryWhisperAI(wavBlob);
+                
+                if(transcriptChunk) {
+                    finalTranscript += transcriptChunk + " ";
+                    resultText.value = finalTranscript.trim();
+                }
+
+                const percent = Math.round(((i + 1) / totalChunks) * 100);
+                progressBar.style.width = percent + "%";
+            }
+
+            statusDiv.innerText = "✨ Complete! Full audio processed successfully.";
+            statusDiv.style.color = "var(--success)";
+
+        } catch (error) {
+            statusDiv.innerText = "❌ Process Interrupted: " + error.message;
+            statusDiv.style.color = "#ef4444";
+        } finally {
+            convertBtn.disabled = false;
+        }
+    }
+
+    function extractAudioChunk(ctx, buffer, start, end) {
+        const sampleRate = buffer.sampleRate;
+        const startSample = start * sampleRate;
+        const endSample = end * sampleRate;
+        const frameCount = endSample - startSample;
+        const newBuffer = ctx.createBuffer(buffer.numberOfChannels, frameCount, sampleRate);
+        
+        for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+            newBuffer.getChannelData(channel).set(buffer.getChannelData(channel).subarray(startSample, endSample));
+        }
+        return newBuffer;
+    }
+
+    async function bufferToWavBlob(buffer) {
+        const numOfChan = buffer.numberOfChannels,
+            length = buffer.length * numOfChan * 2 + 44,
+            bufferArr = new ArrayBuffer(length),
+            view = new DataView(bufferArr),
+            channels = [];
+        let pos = 0;
+
+        function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
+        function setUint32(data) { view.setUint32(pos, data, true); pos += 4; }
+
+        setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157);
+        setUint32(0x20746d66); setUint32(16); setUint16(1); setUint16(numOfChan);
+        setUint32(buffer.sampleRate); setUint32(buffer.sampleRate * 2 * numOfChan);
+        setUint16(numOfChan * 2); setUint16(16); setUint32(0x61746164); setUint32(length - pos - 4);
+
+        for(let i=0; i<numOfChan; i++) channels.push(buffer.getChannelData(i));
+
+        let currentSampleIndex = 0;
